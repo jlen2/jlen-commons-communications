@@ -45,7 +45,7 @@ public class LeaderElectionAccess extends ZookeeperAccess {
     private void tryLeaderElection() throws KeeperException, InterruptedException {
         NavigableSet<String> childNodes = new TreeSet<>(getChildNodes());
         if(childNodes.isEmpty()) {
-            throw new IllegalStateException("No child nodes found");
+            throw new IllegalStateException("No child nodes found"); // no way
         }
         String prevNode = childNodes.lower(thisNode);
         if(prevNode == null) {
@@ -61,11 +61,11 @@ public class LeaderElectionAccess extends ZookeeperAccess {
         if(EventType.NodeDeleted.equals(event.getType())) {
             try {
                 tryLeaderElection();
-                if(isLeader()) {
-                    notifySubscribers();
-                }
             } catch (KeeperException | InterruptedException e) {
                 throw new IllegalStateException(e);
+            }
+            if(isLeader()) {
+                notifySubscribers();
             }
         }
     }
@@ -83,6 +83,10 @@ public class LeaderElectionAccess extends ZookeeperAccess {
     
     public void subscribe(Consumer<State> fn) {
         subscribers.add(fn);
+    }
+    
+    public void clearSubscriptions() {
+        subscribers.clear();
     }
 
     @Override

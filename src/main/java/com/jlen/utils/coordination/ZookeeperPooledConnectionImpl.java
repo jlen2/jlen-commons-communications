@@ -1,8 +1,8 @@
 package com.jlen.utils.coordination;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -11,19 +11,26 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.ZooKeeper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Stopwatch;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 
-public class ZookeeperConnectionImpl implements ZookeeperConnection {
+public class ZookeeperPooledConnectionImpl implements ZookeeperPooledConnection {
 
-    private static Map<String, ZookeeperConnection> cache = new ConcurrentHashMap<>();
+    private static final Logger logger = LoggerFactory.getLogger(ZookeeperPooledConnectionImpl.class);
+    
+    private static final Map<String, ZookeeperPooledConnectionImpl> cache = Maps.newConcurrentMap();
+    private static final List<ZookeeperAccess> accessCache = Lists.newCopyOnWriteArrayList();
     
     private final ZooKeeper zookeeper;
     
     private final Lock statusNotifLock = new ReentrantLock();
     private final Condition statusChangeCondition = statusNotifLock.newCondition();
     
-    private ZookeeperConnectionImpl(ZookeeperConfig config) throws IOException {
+    private ZookeeperPooledConnectionImpl(ZookeeperConfig config) throws IOException {
         
         this.zookeeper = new ZooKeeper(config.getUrl(), config.getTimeoutMillis(), this);
         
@@ -34,7 +41,7 @@ public class ZookeeperConnectionImpl implements ZookeeperConnection {
         }
     }
     
-    public static ZookeeperConnection getConnection(ZookeeperConfig config) throws IOException {
+    public static ZookeeperPooledConnection getConnection(ZookeeperConfig config) throws IOException {
         try {
             return cache.computeIfAbsent(config.getUrl(), u -> createNewConnection(config));
         } catch (Exception e) {
@@ -42,9 +49,9 @@ public class ZookeeperConnectionImpl implements ZookeeperConnection {
         }
     }
     
-    private static ZookeeperConnection createNewConnection(ZookeeperConfig config) {
+    private static ZookeeperPooledConnectionImpl createNewConnection(ZookeeperConfig config) {
         try {
-            return new ZookeeperConnectionImpl(config);
+            return new ZookeeperPooledConnectionImpl(config);
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to create zookeeper connection", e);
         }
@@ -100,7 +107,28 @@ public class ZookeeperConnectionImpl implements ZookeeperConnection {
     }
     
     public LeaderElectionAccess getZkpLeaderElectionAccess(String root) throws KeeperException, InterruptedException {
-        return new LeaderElectionAccess(this.zookeeper, root);
+        LeaderElectionAccess access = new LeaderElectionAccess(this.zookeeper, root);
+        accessCache.add(access);
+        return access;
+    }
+
+    @Override
+    public void destroy() {
+        cache.forEach((n, c) -> {
+            try {
+                c.zookeeper.close();
+            } catch (InterruptedException e) {
+                logger.warn("Unable to close zookeeper connection", e);
+                Thread.currentThread().interrupt();
+            }
+        });
+        accessCache.forEach(a -> {
+            try {
+                a.onDisconnect();
+            } catch (Exception e) {
+                logger.warn("Unable to invoke callback on zookeeper access", e);
+            }
+        });
     }
 
 }

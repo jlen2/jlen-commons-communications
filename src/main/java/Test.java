@@ -4,7 +4,7 @@ import org.apache.zookeeper.KeeperException;
 
 import com.jlen.utils.coordination.LeaderElectionAccess;
 import com.jlen.utils.coordination.ZookeeperConfig;
-import com.jlen.utils.coordination.ZookeeperConnection;
+import com.jlen.utils.coordination.ZookeeperPooledConnection;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 
@@ -15,7 +15,7 @@ public class Test {
 		Config config = ConfigFactory.defaultApplication();
 		
 		try {
-			ZookeeperConnection conn = ZookeeperConnection.getConnection(new ZookeeperConfig(config.getConfig("jlen.cfg.util.coordiation")));
+			ZookeeperPooledConnection conn = ZookeeperPooledConnection.getConnection(new ZookeeperConfig(config.getConfig("jlen.cfg.util.coordiation")));
 			LeaderElectionAccess access = conn.getZkpLeaderElectionAccess("my_test_service");
 			System.out.println(access.isLeader());
 			access.subscribe(System.out::println);
